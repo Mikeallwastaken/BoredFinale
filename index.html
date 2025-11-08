@@ -1,22 +1,179 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My GitHub Website</title>
-  <style>
-    body {
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: white;
-      font-family: sans-serif;
-      text-align: center;
-      margin: 0;
-      padding: 60px;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Shooting Star Background</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: black; /* pure black background */
+  }
+
+  canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 0;
+  }
+</style>
 </head>
 <body>
-  <h1>Hello, world!</h1>
-  <p>This is my first GitHub Pages website.</p>
+<canvas id="sky"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+  let stars = [];
+  let shoots = [];
+
+  // SETTINGS
+  const STAR_COUNT = 150;        // number of small background stars
+  const SHOOT_FREQ = 0.2;        // lower = more frequent (seconds)
+  const SHOOT_SPEED = 900;       // slower = lasts longer
+  const SHOOT_LENGTH = 600;      // length of the tail
+  const STAR_MAX_RADIUS = 1.6;
+  const TWINKLE = 0.02;
+  const ANGLE_VARIATION = 3 * (Math.PI / 180); // ±3 degrees
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    makeStars();
+  }
+
+  function makeStars() {
+    stars = [];
+    for (let i = 0; i < STAR_COUNT; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * STAR_MAX_RADIUS,
+        alpha: Math.random(),
+        tw: Math.random() * Math.PI * 2,
+        twSpeed: (Math.random() * 0.6 - 0.3) * TWINKLE
+      });
+    }
+  }
+
+  function drawStar(s) {
+    const a = 0.7 + 0.3 * Math.sin(s.tw);
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function spawnShootingStar() {
+    // 50% chance to spawn from top or left
+    const fromTop = Math.random() < 0.5;
+    let x, y;
+
+    if (fromTop) {
+      x = Math.random() * W;
+      y = Math.random() * H * 0.15;
+    } else {
+      x = Math.random() * W * 0.1;
+      y = Math.random() * H;
+    }
+
+    // Base angle is 45° downward-right, with ±3° variation
+    const baseAngle = Math.PI / 4;
+    const variation = (Math.random() * 2 - 1) * ANGLE_VARIATION;
+    const angle = baseAngle + variation;
+
+    const vx = Math.cos(angle) * SHOOT_SPEED;
+    const vy = Math.sin(angle) * SHOOT_SPEED;
+    const lifetime = (SHOOT_LENGTH / SHOOT_SPEED) * 2500; // lasts longer
+
+    shoots.push({
+      x, y, vx, vy, length: SHOOT_LENGTH,
+      birth: performance.now(),
+      life: lifetime
+    });
+  }
+
+  function drawShooting(st) {
+    const now = performance.now();
+    const age = now - st.birth;
+    const t = age / st.life;
+    if (t > 1) return false;
+
+    const px = st.x + st.vx * (age / 1000);
+    const py = st.y + st.vy * (age / 1000);
+    const tailX = px - (st.vx / SHOOT_SPEED) * st.length;
+    const tailY = py - (st.vy / SHOOT_SPEED) * st.length;
+
+    const grad = ctx.createLinearGradient(px, py, tailX, tailY);
+    grad.addColorStop(0, `rgba(255,255,255,${1 - t})`);
+    grad.addColorStop(0.3, `rgba(255,200,150,${0.4 * (1 - t)})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(tailX, tailY);
+    ctx.stroke();
+
+    // bright head
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(255,255,255,${1 - t})`;
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    return true;
+  }
+
+  let last = performance.now();
+  let shootTimer = 0;
+
+  function loop(ts) {
+    const delta = ts - last;
+    last = ts;
+    shootTimer += delta;
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw stars
+    for (let s of stars) {
+      s.tw += s.twSpeed * (delta / 16);
+      drawStar(s);
+    }
+
+    // More frequent & multiple shooting stars at once
+    if (shootTimer > (SHOOT_FREQ * 1000)) {
+      shootTimer = 0;
+      const bursts = 2 + Math.floor(Math.random() * 3); // spawn 2–4 at once
+      for (let i = 0; i < bursts; i++) spawnShootingStar();
+    }
+
+    // Draw & clean up shooting stars
+    for (let i = shoots.length - 1; i >= 0; i--) {
+      if (!drawShooting(shoots[i])) shoots.splice(i, 1);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
 </body>
 </html>
